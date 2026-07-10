@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LineSec Security Dashboard
 
-## Getting Started
+LineSec Dashboard is a Next.js and Tailwind CSS frontend that provides a single-pane-of-glass monitoring solution for application security infrastructure. It visualizes real-time security analytics and vulnerability telemetry ingested into the LineSec Core database.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+*   **Single Pane of Glass**: Displays a consolidated dashboard of application security health and real-time vulnerability status.
+*   **Analytics Metrics Summary Cards**:
+    *   **Total Vulnerabilities**: Calculates total findings in the database.
+    *   **Critical Severity Count**: Isolates and counts issues marked with `CRITICAL` severity status.
+    *   **High Severity Count**: Isolates and counts issues marked with `HIGH` severity status.
+    *   **Remediation Progress**: A progress percentage of total vulnerabilities moved to `TICKET_OPENED` status, displayed using a clean, modern loading bar.
+*   **Telemetry Table**: List of security issues detailing detection tool, vulnerability name, severity badges, ticketing status, and code file-path mapping.
+*   **Expandable Analysis Drawers**: Clicking any finding unfolds a drawer containing the vulnerability description, along with the AI-generated `root_cause` and `remediation_plan` generated dynamically by the Gemini analyzer module.
+*   **Live Refresher**: Interactive reload button to sync the UI state directly with the active FastAPI server without page reloads.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Project Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Prerequisites
+*   Node.js 18+
+*   FastAPI backend running locally at `http://127.0.0.1:8000`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Installation & Run
+1. Navigate to the dashboard directory:
+   ```bash
+   cd linesec-dashboard
+   ```
+2. Install npm dependencies:
+   ```bash
+   npm install
+   ```
+3. Boot the development server:
+   ```bash
+   npm run dev
+   ```
+Open `http://localhost:3000` in your web browser to view the active security dashboard.
