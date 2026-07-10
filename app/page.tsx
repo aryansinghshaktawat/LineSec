@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { 
   Shield, 
   ShieldAlert, 
@@ -233,10 +233,9 @@ export default function Dashboard() {
                     const status = finding.remediation_status.toUpperCase();
 
                     return (
-                      <>
+                      <React.Fragment key={finding.finding_id}>
                         {/* Main row */}
                         <tr 
-                          key={finding.finding_id}
                           onClick={() => toggleExpand(finding.finding_id)}
                           className="hover:bg-slate-800/20 cursor-pointer transition duration-155 border-b border-slate-850"
                         >
@@ -324,7 +323,7 @@ export default function Dashboard() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
