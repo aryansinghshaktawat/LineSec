@@ -49,7 +49,8 @@ class IngestionService:
                 file_path=item.file_path,
                 line_number=item.line_number,
                 package=item.package,
-                ecosystem=item.ecosystem
+                ecosystem=item.ecosystem,
+                scanner_type=item.scanner_type
             )
 
             # Query for existing finding by fingerprint in this repository

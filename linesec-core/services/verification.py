@@ -106,7 +106,7 @@ class SecurityDiffService:
                 else:
                     new.append(item)
 
-        verdict = "PASSED" if len(unchanged) == 0 and len(regressed) == 0 and len([n for n in new if n["severity"] in ["CRITICAL", "HIGH"]]) == 0 else "FAILED"
+        verdict = "PASSED" if len(unchanged) == 0 and len(regressed) == 0 and len(new) == 0 else "FAILED"
 
         return {
             "total_base": len(base_findings),
@@ -197,21 +197,21 @@ class VerificationEngine:
 
         # Update findings lifecycle
         for f in task_findings:
-            if f.fingerprint in resolved_fps:
+            if f.fingerprint in resolved_fps and diff["new_count"] == 0:
                 f.status = FindingStatus.RESOLVED.value
                 f.remediation_status = "RESOLVED"
-            elif f.fingerprint in unchanged_fps:
+            else:
                 f.status = FindingStatus.FAILED.value
                 f.remediation_status = "FAILED"
 
         # Determine task promotion
-        verified = len(unchanged_fps) == 0 and diff["regressed_count"] == 0
+        verified = len(unchanged_fps) == 0 and diff["regressed_count"] == 0 and diff["new_count"] == 0
         if verified:
             task.status = TaskStatus.RESOLVED.value
             summary = f"Verification PASSED: All {initial_count} findings resolved successfully."
         else:
             task.status = TaskStatus.FAILED.value
-            summary = f"Verification FAILED: {len(unchanged_fps)} findings remained open and {diff['regressed_count']} regressions detected."
+            summary = f"Verification FAILED: {len(unchanged_fps)} findings remained open, {diff['new_count']} new findings, and {diff['regressed_count']} regressions detected."
 
         # Audit Event
         audit = models.AuditEvent(
