@@ -159,6 +159,7 @@ class RemediationExecutionService:
         workspace_dir: Optional[str] = None,
         target_repo_slug: Optional[str] = None,
         github_token: Optional[str] = None,
+        push_remote: bool = False,
         dry_run: bool = False
     ) -> Dict[str, Any]:
         """
@@ -211,6 +212,13 @@ class RemediationExecutionService:
                 subprocess.run(["git", "commit", "-m", commit_msg], cwd=workspace_abs, check=True, capture_output=True)
             except Exception:
                 pass
+
+            # Push branch if requested or target repo is specified
+            if target_repo_slug and not dry_run and push_remote:
+                try:
+                    subprocess.run(["git", "push", "-u", "origin", branch_name, "--force"], cwd=workspace_abs, check=True, capture_output=True)
+                except Exception as e:
+                    pass
 
             if not dry_run:
                 task.status = TaskStatus.PR_OPENED.value if task.safety_level == "SAFE" else TaskStatus.TICKET_OPENED.value
