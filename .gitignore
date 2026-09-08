@@ -1,1 +1,16 @@
 .DS_Store
+*.pyc
+__pycache__/
+*.db
+*.sqlite
+*.sqlite3
+.env
+.pytest_cache/
+.coverage
+htmlcov/
+venv/
+.venv/
+node_modules/
+.next/
+dist/
+build/

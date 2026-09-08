@@ -1,12 +1,14 @@
 fastapi
 uvicorn
 sqlalchemy
+alembic
 psycopg2-binary
 pydantic
+pydantic-settings
 requests
 bandit
 pytest
 httpx
 pyyaml
 python-dotenv
-
+PyGithub

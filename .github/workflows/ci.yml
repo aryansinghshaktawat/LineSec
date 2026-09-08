@@ -1,0 +1,88 @@
+name: LineSec 2+ Enterprise CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  backend-test-and-scan:
+    name: Backend Test, Migration & Security Scan
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: linesec_test
+          POSTGRES_USER: linesec
+          POSTGRES_PASSWORD: linesec_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: ./linesec-core
+
+    env:
+      DATABASE_URL: postgresql://linesec:linesec_password@localhost:5432/linesec_test
+      API_SECRET_KEY: ci-test-secret-key
+      DEV_MODE: "false"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Database Migrations on PostgreSQL
+        run: |
+          alembic upgrade head
+
+      - name: Run Bandit SAST Security Scan
+        run: |
+          bandit -r core adapters services intel ai cli main.py database.py models.py schemas.py -ll
+
+      - name: Run Pytest Suite
+        run: |
+          pytest -v
+
+  frontend-build:
+    name: Dashboard Build & Verification
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./linesec-dashboard
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: linesec-dashboard/package-lock.json
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Next.js Dashboard
+        run: npm run build

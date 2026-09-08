@@ -1,11 +1,18 @@
+import os
+import sys
 import json
+import time
+import shutil
+import subprocess
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 import models
 import schemas
 from core.fingerprint import generate_finding_fingerprint
-from core.lifecycle import FindingStatus, TaskStatus, validate_finding_transition
+from core.lifecycle import FindingStatus, TaskStatus
+from adapters.bandit import BanditAdapter
+from adapters.trivy import TrivyAdapter
 
 def utc_now():
     return datetime.now(timezone.utc)
@@ -37,11 +44,11 @@ class SecurityDiffService:
                 file_path=rf.file_path,
                 line_number=rf.line_number,
                 package=rf.package,
-                ecosystem=rf.ecosystem
+                ecosystem=rf.ecosystem,
+                scanner_type=rf.scanner_type
             )
             rescan_fps.add(fp)
             rescan_items_map[fp] = rf
-
 
         resolved = []
         unchanged = []
@@ -119,14 +126,50 @@ class SecurityDiffService:
 class VerificationEngine:
     """
     Autonomous Verification Engine.
-    Validates whether remediation tasks successfully eradicated vulnerabilities without regressions.
+    Executes actual test runners / security scanners and verifies remediation integrity.
     """
 
     @staticmethod
+    def run_local_scanner(workspace_dir: str, scanner: str = "bandit") -> Tuple[int, List[schemas.FindingCreate], float]:
+        """
+        Runs scanner binary against workspace_dir and parses results into canonical schema.
+        """
+        if not os.path.isdir(workspace_dir):
+            raise ValueError(f"Workspace directory not found: {workspace_dir}")
+
+        start_time = time.time()
+        findings: List[schemas.FindingCreate] = []
+        returncode = 0
+
+        if scanner.lower() == "bandit":
+            try:
+                import sys
+                candidate_bins = [
+                    shutil.which("bandit"),
+                    os.path.join(os.path.dirname(sys.executable), "bandit"),
+                    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "venv", "bin", "bandit")),
+                    "bandit"
+                ]
+                bandit_bin = next((b for b in candidate_bins if b and os.path.exists(b)), "bandit")
+
+                cmd = [bandit_bin, "-r", workspace_dir, "-f", "json"]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                returncode = res.returncode
+                raw_json = res.stdout or "{}"
+                findings = BanditAdapter().parse_raw(raw_json)
+            except Exception:
+                returncode = -1
+
+        duration = round(time.time() - start_time, 2)
+        return returncode, findings, duration
+
+    @classmethod
     def verify_task(
+        cls,
         db: Session,
         task_id: str,
-        rescan_findings: Optional[List[schemas.FindingCreate]] = None
+        rescan_findings: Optional[List[schemas.FindingCreate]] = None,
+        workspace_dir: Optional[str] = None
     ) -> Dict[str, Any]:
         task = db.query(models.RemediationTask).filter(models.RemediationTask.task_id == task_id).first()
         if not task:
@@ -135,7 +178,12 @@ class VerificationEngine:
         task_findings = task.findings or []
         initial_count = len(task_findings)
 
-        if rescan_findings is None:
+        # If workspace_dir provided, run real scanner
+        if workspace_dir and os.path.isdir(workspace_dir):
+            scanner_name = task_findings[0].scanner or "bandit" if task_findings else "bandit"
+            _, scanned_findings, _ = cls.run_local_scanner(workspace_dir, scanner_name)
+            rescan_findings = scanned_findings
+        elif rescan_findings is None:
             rescan_findings = []
 
         diff = SecurityDiffService.compare_finding_sets(

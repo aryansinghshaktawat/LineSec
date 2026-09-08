@@ -172,6 +172,7 @@ class SecurityDiffResponse(BaseModel):
 
 class TaskVerificationRequest(BaseModel):
     rescan_findings: Optional[List[FindingCreate]] = None
+    workspace_dir: Optional[str] = None
 
 class TaskVerificationResponse(BaseModel):
     task_id: str
@@ -223,5 +224,34 @@ class SLAReportResponse(BaseModel):
     waived_items_count: int
     mttr_hours: float
     priority_breakdown: Dict[str, SLAPriorityStats]
+
+
+# ==========================================
+# Repository & Remediation Execution Schemas
+# ==========================================
+
+class RepositoryCreate(BaseModel):
+    name: str
+    url: Optional[str] = None
+    default_branch: str = "main"
+    environment: str = "production"
+    criticality: str = "MEDIUM"
+    internet_exposed: bool = False
+    owner: Optional[str] = None
+
+class RepositoryResponse(RepositoryCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    repository_id: str
+    created_at: datetime
+    updated_at: datetime
+
+class TaskRemediationRequest(BaseModel):
+    dry_run: bool = False
+    target_repo_slug: Optional[str] = None
+    github_token: Optional[str] = None
+    workspace_dir: Optional[str] = None
+
+
 
 

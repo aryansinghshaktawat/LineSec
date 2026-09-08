@@ -8,6 +8,9 @@ from typing import List, Optional, Dict, Any
 import models
 import schemas
 from database import SessionLocal, engine, Base
+from core.config import settings
+from core.auth import Role, require_role, get_current_user, User
+from services.remediation_service import RemediationExecutionService
 from services.ingestion import IngestionService
 from services.grouping import TaskGroupingEngine
 from services.planner import RemediationPlanner
@@ -39,7 +42,7 @@ app = FastAPI(
 # CORS Middleware (permitting dashboard integration)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,8 +65,63 @@ def get_db():
 def health_check():
     return {"database": "connected", "api": "healthy", "version": "2.0.0"}
 
+# ==========================================
+# Repository Management Endpoints
+# ==========================================
+
+@app.post("/api/v1/repositories", response_model=schemas.RepositoryResponse)
+def create_repository(
+    repo_in: schemas.RepositoryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
+):
+    import uuid
+    existing = db.query(models.Repository).filter(models.Repository.name == repo_in.name).first()
+    if existing:
+        return existing
+
+    repo_id = f"repo-{uuid.uuid4().hex[:8]}"
+    repo = models.Repository(
+        repository_id=repo_id,
+        name=repo_in.name,
+        url=repo_in.url,
+        default_branch=repo_in.default_branch,
+        environment=repo_in.environment,
+        criticality=repo_in.criticality,
+        internet_exposed=repo_in.internet_exposed,
+        owner=repo_in.owner
+    )
+    db.add(repo)
+    db.commit()
+    db.refresh(repo)
+    return repo
+
+@app.get("/api/v1/repositories", response_model=List[schemas.RepositoryResponse])
+def list_repositories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
+    return db.query(models.Repository).order_by(models.Repository.created_at.desc()).all()
+
+@app.get("/api/v1/repositories/{repo_id}", response_model=schemas.RepositoryResponse)
+def get_repository(
+    repo_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
+    repo = db.query(models.Repository).filter(
+        (models.Repository.repository_id == repo_id) | (models.Repository.name == repo_id)
+    ).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    return repo
+
 @app.post("/api/ingest", response_model=List[schemas.FindingResponse])
-def ingest_findings(findings: List[schemas.FindingCreate], db: Session = Depends(get_db)):
+def ingest_findings(
+    findings: List[schemas.FindingCreate],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
+):
     processed, _ = IngestionService.ingest_findings(db, findings)
     return processed
 
@@ -72,7 +130,8 @@ def get_findings(
     db: Session = Depends(get_db),
     status: Optional[str] = Query(None),
     severity: Optional[str] = Query(None),
-    scanner: Optional[str] = Query(None)
+    scanner: Optional[str] = Query(None),
+    current_user: User = Depends(require_role(Role.VIEWER))
 ):
     query = db.query(models.Finding)
     if status:
@@ -98,7 +157,8 @@ def get_findings(
 def import_bandit_scan(
     raw_payload: Dict[str, Any] = Body(...),
     repository_id: str = Query("default"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     adapter = BanditAdapter()
     findings = adapter.parse_raw(raw_payload)
@@ -117,7 +177,8 @@ def import_bandit_scan(
 def import_trivy_scan(
     raw_payload: Dict[str, Any] = Body(...),
     repository_id: str = Query("default"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     adapter = TrivyAdapter()
     findings = adapter.parse_raw(raw_payload)
@@ -136,7 +197,8 @@ def import_trivy_scan(
 def import_sarif_scan(
     raw_sarif: Dict[str, Any] = Body(...),
     repository_id: str = Query("default"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     adapter = SARIFAdapter()
     findings = adapter.parse_raw(raw_sarif)
@@ -152,7 +214,11 @@ def import_sarif_scan(
     }
 
 @app.get("/api/v1/adapters/sarif/export")
-def export_sarif(repository_id: str = "default", db: Session = Depends(get_db)):
+def export_sarif(
+    repository_id: str = "default",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
     findings = db.query(models.Finding).filter(models.Finding.repository_id == repository_id).all()
     sarif_doc = SARIFAdapter.export_sarif(findings)
     return JSONResponse(content=sarif_doc)
@@ -163,7 +229,11 @@ def export_sarif(repository_id: str = "default", db: Session = Depends(get_db)):
 # ==========================================
 
 @app.post("/api/v1/tasks/group", response_model=List[schemas.RemediationTaskResponse])
-def group_findings_into_tasks(repository_id: str = "default", db: Session = Depends(get_db)):
+def group_findings_into_tasks(
+    repository_id: str = "default",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
+):
     tasks = TaskGroupingEngine.group_repository_findings(db, repository_id)
     response_items = []
     for t in tasks:
@@ -184,7 +254,11 @@ def group_findings_into_tasks(repository_id: str = "default", db: Session = Depe
     return response_items
 
 @app.get("/api/v1/tasks", response_model=List[schemas.RemediationTaskResponse])
-def get_remediation_tasks(status: Optional[str] = None, db: Session = Depends(get_db)):
+def get_remediation_tasks(
+    status: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
     query = db.query(models.RemediationTask)
     if status:
         query = query.filter(models.RemediationTask.status == status.upper())
@@ -209,7 +283,11 @@ def get_remediation_tasks(status: Optional[str] = None, db: Session = Depends(ge
     return response_items
 
 @app.get("/api/v1/tasks/{task_id}")
-def get_task_detail(task_id: str, db: Session = Depends(get_db)):
+def get_task_detail(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
     task = db.query(models.RemediationTask).filter(models.RemediationTask.task_id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="RemediationTask not found")
@@ -235,7 +313,8 @@ def analyze_task_endpoint(
     task_id: str,
     environment: str = Query("development"),
     criticality: str = Query("MEDIUM"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     ai_service = AIAnalysisService()
     try:
@@ -253,7 +332,8 @@ def analyze_task_endpoint(
 def create_task_fix_plan(
     task_id: str,
     environment: str = Query("development"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     """Generates a structured FixPlan with deterministic safety classification."""
     try:
@@ -265,13 +345,31 @@ def create_task_fix_plan(
 @app.post("/api/v1/tasks/{task_id}/remediate")
 def remediate_task(
     task_id: str,
+    req: Optional[schemas.TaskRemediationRequest] = None,
     dry_run: bool = Query(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     """
     Executes automated remediation: generates FixPlan, evaluates safety,
     and returns branch, PR, and commit instructions.
+    If workspace_dir or target_repo_slug is specified, performs real Git & manifest operations.
     """
+    is_dry_run = req.dry_run if req else dry_run
+    workspace_dir = req.workspace_dir if req else None
+    target_repo_slug = req.target_repo_slug if req else None
+    github_token = req.github_token if req else None
+
+    if workspace_dir or target_repo_slug:
+        return RemediationExecutionService.execute_remediation(
+            db=db,
+            task_id=task_id,
+            workspace_dir=workspace_dir,
+            target_repo_slug=target_repo_slug,
+            github_token=github_token,
+            dry_run=is_dry_run
+        )
+
     task = db.query(models.RemediationTask).filter(models.RemediationTask.task_id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -298,7 +396,7 @@ def remediate_task(
         f"{plan.verification_steps}\n"
     )
 
-    if not dry_run:
+    if not is_dry_run:
         task.status = "PR_OPENED" if plan.safety_level == "SAFE" else "TICKET_OPENED"
         db.commit()
 
@@ -309,7 +407,7 @@ def remediate_task(
         "branch_name": branch_name,
         "pr_title": pr_title,
         "pr_body": pr_body,
-        "dry_run": dry_run,
+        "dry_run": is_dry_run,
         "status": task.status
     }
 
@@ -321,7 +419,8 @@ def remediate_task(
 @app.post("/api/v1/intel/enrich")
 def enrich_repository_findings(
     repository_id: str = Query("default"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     findings = db.query(models.Finding).filter(
         models.Finding.repository_id == repository_id,
@@ -356,7 +455,8 @@ def evaluate_repository_risk(
     environment: str = Query("development"),
     criticality: str = Query("MEDIUM"),
     internet_exposed: bool = Query(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     findings = db.query(models.Finding).filter(models.Finding.repository_id == repository_id).all()
     context = RepositoryContext(
@@ -402,7 +502,8 @@ def evaluate_policy_gate(
     repository_id: str = Query("default"),
     environment: str = Query("development"),
     internet_exposed: bool = Query(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     findings = db.query(models.Finding).filter(models.Finding.repository_id == repository_id).all()
     context = RepositoryContext(
@@ -425,7 +526,11 @@ def evaluate_policy_gate(
 # ==========================================
 
 @app.post("/api/v1/ingest/batch", response_model=schemas.IngestBatchResponse)
-def ingest_batch(batch: schemas.IngestBatchRequest, db: Session = Depends(get_db)):
+def ingest_batch(
+    batch: schemas.IngestBatchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
+):
     processed, stats = IngestionService.ingest_findings(
         db=db,
         findings_in=batch.findings,
@@ -443,7 +548,11 @@ def ingest_batch(batch: schemas.IngestBatchRequest, db: Session = Depends(get_db
     }
 
 @app.get("/api/v1/posture", response_model=schemas.PostureSummaryResponse)
-def get_posture_summary(repository_id: str = "default", db: Session = Depends(get_db)):
+def get_posture_summary(
+    repository_id: str = "default",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
     findings = db.query(models.Finding).filter(models.Finding.repository_id == repository_id).all()
     total = len(findings)
     crit = sum(1 for f in findings if (f.severity or "").upper() == "CRITICAL")
@@ -479,7 +588,8 @@ def get_posture_summary(repository_id: str = "default", db: Session = Depends(ge
 def compute_security_diff(
     repository_id: str = Query("default"),
     rescan_findings: List[schemas.FindingCreate] = Body(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
 ):
     """
     Compares active database findings for a repository against rescan findings.
@@ -501,18 +611,21 @@ def compute_security_diff(
 def verify_task_remediation(
     task_id: str,
     req: Optional[schemas.TaskVerificationRequest] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.DEVELOPER))
 ):
     """
-    Verifies remediation of a task by evaluating rescan findings.
+    Verifies remediation of a task by evaluating rescan findings or executing a live scanner against workspace_dir.
     Automatically transitions task and finding lifecycles to RESOLVED or FAILED.
     """
     rescan_findings = req.rescan_findings if req else []
+    workspace_dir = req.workspace_dir if req else None
     try:
         result = VerificationEngine.verify_task(
             db=db,
             task_id=task_id,
-            rescan_findings=rescan_findings
+            rescan_findings=rescan_findings,
+            workspace_dir=workspace_dir
         )
         return result
     except ValueError as e:
@@ -524,7 +637,11 @@ def verify_task_remediation(
 # ==========================================
 
 @app.get("/api/v1/posture/sla", response_model=schemas.SLAReportResponse)
-def get_sla_posture_report(repository_id: str = "default", db: Session = Depends(get_db)):
+def get_sla_posture_report(
+    repository_id: str = "default",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
     """
     Computes active SLA breaches, approaching breaches, MTTR, and priority breakdown.
     """
@@ -533,10 +650,12 @@ def get_sla_posture_report(repository_id: str = "default", db: Session = Depends
 @app.post("/api/v1/risk-acceptance", response_model=schemas.RiskAcceptanceResponse)
 def create_risk_acceptance_waiver(
     waiver_in: schemas.RiskAcceptanceCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.SECURITY_ENGINEER))
 ):
     """
     Grants a formal risk acceptance waiver with an expiration deadline and rationale.
+    Requires SECURITY_ENGINEER or ADMIN role.
     """
     try:
         waiver = PostureService.create_risk_acceptance(
@@ -552,7 +671,10 @@ def create_risk_acceptance_waiver(
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/v1/risk-acceptance", response_model=List[schemas.RiskAcceptanceResponse])
-def list_risk_acceptances(db: Session = Depends(get_db)):
+def list_risk_acceptances(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
     """
     Lists all risk acceptance records.
     """
@@ -560,7 +682,11 @@ def list_risk_acceptances(db: Session = Depends(get_db)):
 
 
 @app.get("/api/v1/audit")
-def get_audit_events(limit: int = 50, db: Session = Depends(get_db)):
+def get_audit_events(
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(Role.VIEWER))
+):
     return db.query(models.AuditEvent).order_by(models.AuditEvent.created_at.desc()).limit(limit).all()
 
 

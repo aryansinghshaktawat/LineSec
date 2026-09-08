@@ -105,131 +105,46 @@ export default function Dashboard() {
   const [waiverReason, setWaiverReason] = useState<string>("");
   const [waiverOwner, setWaiverOwner] = useState<string>("security-team@linesec.io");
 
-  const API_BASE = "http://127.0.0.1:8000";
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
   const fetchAllData = async () => {
     setLoading(true);
     setError(null);
     try {
       // 1. Fetch Findings
-      const findingsRes = await fetch(`${API_BASE}/api/findings`).catch(() => null);
-      if (findingsRes && findingsRes.ok) {
-        const data: Finding[] = await findingsRes.json();
-        setFindings(data);
-      } else {
-        // Fallback / Initial demo findings
-        setFindings([
-          {
-            finding_id: "f-demo-1",
-            tool_name: "trivy",
-            scanner: "trivy",
-            vulnerability_name: "CVE-2023-32681: Requests Session Information Exposure",
-            cve: "CVE-2023-32681",
-            severity: "HIGH",
-            priority: "P1",
-            risk_score: 78.5,
-            description: "Requests library forwards proxy authentication credentials across unintended origins.",
-            file_path: "requirements.txt",
-            line_number: 14,
-            package: "requests",
-            installed_version: "2.25.0",
-            fixed_version: "2.31.0",
-            remediation_status: "ANALYZED",
-            status: "ANALYZED",
-            root_cause: "Outdated requests dependency vulnerable to proxy header credential leakage.",
-            remediation_plan: "Upgrade requests package specifier to >=2.31.0 in requirements.txt."
-          },
-          {
-            finding_id: "f-demo-2",
-            tool_name: "bandit",
-            scanner: "bandit",
-            vulnerability_name: "B301: Python Pickle Deserialization Risk",
-            severity: "CRITICAL",
-            priority: "P0",
-            risk_score: 95.0,
-            description: "Deserialization of untrusted data with pickle can lead to arbitrary remote code execution.",
-            file_path: "core/auth.py",
-            line_number: 88,
-            remediation_status: "NEW",
-            status: "NEW",
-            root_cause: "Direct invocation of pickle.loads() on network session payloads.",
-            remediation_plan: "Refactor session serializer to use cryptographically signed JSON or PyJWT."
-          }
-        ]);
+      const findingsRes = await fetch(`${API_BASE}/api/findings`);
+      if (!findingsRes.ok) {
+        throw new Error(`Failed to fetch findings: ${findingsRes.status} ${findingsRes.statusText}`);
       }
+      const data: Finding[] = await findingsRes.json();
+      setFindings(data);
 
       // 2. Fetch Tasks
-      const tasksRes = await fetch(`${API_BASE}/api/v1/tasks`).catch(() => null);
-      if (tasksRes && tasksRes.ok) {
-        const tasksData: RemediationTask[] = await tasksRes.json();
-        setTasks(tasksData);
-      } else {
-        setTasks([
-          {
-            task_id: "task-demo-1",
-            title: "Upgrade requests for CVE-2023-32681",
-            package: "requests",
-            ecosystem: "pip",
-            action: "upgrade",
-            target_version: "2.31.0",
-            status: "PENDING",
-            priority: "P1",
-            risk_score: 78.5,
-            safety_level: "SAFE",
-            findings_count: 1,
-            decision: {
-              summary: "Automated patch upgrade to eliminate credential leakage.",
-              recommended_action: "Bump requests>=2.31.0 and run test suite.",
-              deployment_risk: "LOW",
-              provider: "deterministic_fallback"
-            }
-          }
-        ]);
+      const tasksRes = await fetch(`${API_BASE}/api/v1/tasks`);
+      if (!tasksRes.ok) {
+        throw new Error(`Failed to fetch remediation tasks: ${tasksRes.status} ${tasksRes.statusText}`);
       }
+      const tasksData: RemediationTask[] = await tasksRes.json();
+      setTasks(tasksData);
 
       // 3. Fetch Posture
-      const postureRes = await fetch(`${API_BASE}/api/v1/posture`).catch(() => null);
-      if (postureRes && postureRes.ok) {
-        const pData: PostureSummary = await postureRes.json();
-        setPosture(pData);
-      } else {
-        setPosture({
-          total_findings: 2,
-          critical_count: 1,
-          high_count: 1,
-          medium_count: 0,
-          low_count: 0,
-          security_score: 65.0,
-          security_debt_hours: 6.0,
-          remediation_progress_percent: 50.0,
-          regressions_count: 0
-        });
+      const postureRes = await fetch(`${API_BASE}/api/v1/posture`);
+      if (!postureRes.ok) {
+        throw new Error(`Failed to fetch security posture: ${postureRes.status} ${postureRes.statusText}`);
       }
+      const pData: PostureSummary = await postureRes.json();
+      setPosture(pData);
 
       // 4. Fetch SLA
-      const slaRes = await fetch(`${API_BASE}/api/v1/posture/sla`).catch(() => null);
-      if (slaRes && slaRes.ok) {
-        const sData: SLAReport = await slaRes.json();
-        setSlaReport(sData);
-      } else {
-        setSlaReport({
-          active_tasks_count: 1,
-          breached_tasks_count: 0,
-          approaching_breach_count: 0,
-          on_track_tasks_count: 1,
-          waived_items_count: 0,
-          mttr_hours: 4.2,
-          priority_breakdown: {
-            P0: { total: 1, breached: 0, approaching: 0, on_track: 1 },
-            P1: { total: 1, breached: 0, approaching: 0, on_track: 1 },
-            P2: { total: 0, breached: 0, approaching: 0, on_track: 0 },
-            P3: { total: 0, breached: 0, approaching: 0, on_track: 0 }
-          }
-        });
+      const slaRes = await fetch(`${API_BASE}/api/v1/posture/sla`);
+      if (!slaRes.ok) {
+        throw new Error(`Failed to fetch SLA report: ${slaRes.status} ${slaRes.statusText}`);
       }
+      const sData: SLAReport = await slaRes.json();
+      setSlaReport(sData);
 
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred");
+      setError(err.message || "Failed to communicate with LineSec API backend.");
     } finally {
       setLoading(false);
     }
@@ -243,27 +158,33 @@ export default function Dashboard() {
     setActionMessage("Clustering vulnerabilities into remediation tasks...");
     try {
       const res = await fetch(`${API_BASE}/api/v1/tasks/group`, { method: "POST" });
-      if (res.ok) {
-        setActionMessage("Vulnerabilities successfully grouped into tasks!");
-        await fetchAllData();
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Grouping failed with status ${res.status}`);
       }
-    } catch {
-      setActionMessage("Task grouping simulation executed.");
+      setActionMessage("Vulnerabilities successfully grouped into tasks!");
+      await fetchAllData();
+    } catch (err: any) {
+      setError(`Task grouping error: ${err.message}`);
+      setActionMessage(null);
     }
     setTimeout(() => setActionMessage(null), 4000);
   };
 
   const handleRemediateTask = async (taskId: string) => {
-    setActionMessage(`Generating FixPlan and PR payload for ${taskId}...`);
+    setActionMessage(`Generating FixPlan and executing remediation for ${taskId}...`);
     try {
       const res = await fetch(`${API_BASE}/api/v1/tasks/${taskId}/remediate?dry_run=false`, { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        setActionMessage(`PR Branch Created: ${data.branch_name} (${data.safety_level})`);
-        await fetchAllData();
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Remediation failed with status ${res.status}`);
       }
-    } catch {
-      setActionMessage(`Remediation PR dispatched for task ${taskId}`);
+      const data = await res.json();
+      setActionMessage(`Remediation executed: ${data.branch_name || taskId} (${data.status})`);
+      await fetchAllData();
+    } catch (err: any) {
+      setError(`Remediation error for task ${taskId}: ${err.message}`);
+      setActionMessage(null);
     }
     setTimeout(() => setActionMessage(null), 5000);
   };
@@ -276,13 +197,16 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rescan_findings: [] })
       });
-      if (res.ok) {
-        const data = await res.json();
-        setActionMessage(`Verification Complete: ${data.summary}`);
-        await fetchAllData();
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Verification failed with status ${res.status}`);
       }
-    } catch {
-      setActionMessage(`Task ${taskId} verified: All CVEs successfully eradicated.`);
+      const data = await res.json();
+      setActionMessage(`Verification Complete: ${data.summary}`);
+      await fetchAllData();
+    } catch (err: any) {
+      setError(`Verification error for task ${taskId}: ${err.message}`);
+      setActionMessage(null);
     }
     setTimeout(() => setActionMessage(null), 5000);
   };
@@ -304,14 +228,17 @@ export default function Dashboard() {
           expires_at: expires.toISOString()
         })
       });
-      if (res.ok) {
-        setActionMessage("Risk Acceptance waiver granted!");
-        setWaiverTaskId("");
-        setWaiverReason("");
-        await fetchAllData();
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `Risk waiver failed with status ${res.status}`);
       }
-    } catch {
-      setActionMessage("Risk waiver recorded.");
+      setActionMessage("Risk Acceptance waiver granted!");
+      setWaiverTaskId("");
+      setWaiverReason("");
+      await fetchAllData();
+    } catch (err: any) {
+      setError(`Risk waiver error: ${err.message}`);
+      setActionMessage(null);
     }
     setTimeout(() => setActionMessage(null), 4000);
   };

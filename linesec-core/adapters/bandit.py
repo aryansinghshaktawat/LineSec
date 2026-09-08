@@ -17,6 +17,13 @@ class BanditAdapter(ScannerAdapter):
         Parses Bandit JSON reports into canonical FindingCreate schemas.
         """
         if isinstance(raw_data, (str, bytes)):
+            if isinstance(raw_data, bytes):
+                raw_data = raw_data.decode("utf-8", errors="replace")
+            # Strip non-JSON prefix/suffix logs
+            json_start = raw_data.find("{")
+            json_end = raw_data.rfind("}")
+            if json_start != -1 and json_end != -1:
+                raw_data = raw_data[json_start:json_end + 1]
             try:
                 data = json.loads(raw_data)
             except json.JSONDecodeError as e:

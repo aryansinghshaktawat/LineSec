@@ -1,16 +1,39 @@
-version: '3.8'
-
 services:
   db:
-    image: postgres:15
+    image: postgres:15-alpine
+    container_name: linesec-postgres
     environment:
-      POSTGRES_USER: linesec_admin
-      POSTGRES_PASSWORD: supersecretpassword
-      POSTGRES_DB: linesec_core_db
+      POSTGRES_USER: ${POSTGRES_USER:-linesec_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-linesec_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-linesec_core_db}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-linesec_admin} -d ${POSTGRES_DB:-linesec_core_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linesec-core-api
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-linesec_admin}:${POSTGRES_PASSWORD:-linesec_dev_password}@db:5432/${POSTGRES_DB:-linesec_core_db}
+      DEV_MODE: "false"
+      API_SECRET_KEY: ${API_SECRET_KEY:-linesec_docker_secret_key}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
 
 volumes:
   postgres_data:
