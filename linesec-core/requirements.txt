@@ -5,3 +5,8 @@ psycopg2-binary
 pydantic
 requests
 bandit
+pytest
+httpx
+pyyaml
+python-dotenv
+
