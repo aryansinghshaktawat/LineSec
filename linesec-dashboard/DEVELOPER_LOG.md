@@ -20,3 +20,15 @@ The **LineSec Dashboard** (`linesec-dashboard`) is a modern React SPA built usin
     *   **Tailwind CSS**: Custom dark mode layout using deep slate backgrounds and glassmorphic panels.
     *   **Lucide React**: Modern iconography used for cards (Activity, Shield, CheckCircle) and tables.
     *   **Expandable Rows**: Clicking any finding reveals a nested panel highlighting the AI-generated `root_cause` and `remediation_plan` fields.
+
+---
+
+## LineSec 2+ Enterprise Dashboard Upgrade
+In LineSec 2+, the dashboard was upgraded to support full vulnerability management lifecycle visibility:
+*   **Security Posture & SLA Ribbon**: Live Security Score (0-100), estimated security debt in developer hours, MTTR, and SLA breach tracking (`P0` 24h, `P1` 7d, `P2` 30d).
+*   **Multi-View Navigation Tabs**:
+    1.  **Vulnerabilities**: Displays canonical findings with deterministic Risk Score (0-100), Priority badge (`P0`–`P3`), CVSS/CVE details, and expandable AI root cause / guidance panels.
+    2.  **Remediation Tasks & FixPlans**: Visualizes grouped dependency clusters, target upgrade bumps, safety validation levels (`SAFE`, `APPROVAL_REQUIRED`, `MANUAL`), and one-click "Open PR" / "Verify Fix" actions.
+    3.  **Security Diffs & Verification**: Pre- and post-fix scan comparison showing Resolved, Remaining, New Introduced, and Regressed vulnerabilities.
+    4.  **SLA Governance & Waivers**: SLA compliance timers and interactive form to grant formal Risk Acceptance waivers.
+

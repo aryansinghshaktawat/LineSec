@@ -40,16 +40,19 @@ class TaskGroupingEngine:
         # Cluster findings into buckets
         clusters: Dict[str, List[models.Finding]] = {}
         for f in findings:
-            if f.package and f.ecosystem:
+            if f.package:
                 # Dependency upgrade cluster
-                cluster_key = f"pkg:{f.ecosystem}:{f.package}"
+                eco = f.ecosystem or "pip"
+                cluster_key = f"pkg:{eco}:{f.package}"
             else:
                 # Code patch cluster
-                cluster_key = f"code:{f.tool_name or f.scanner}:{f.file_path or 'root'}"
+                tool = f.tool_name or f.scanner or "scanner"
+                cluster_key = f"code:{tool}:{f.file_path or 'root'}"
             
             if cluster_key not in clusters:
                 clusters[cluster_key] = []
             clusters[cluster_key].append(f)
+
 
         created_or_updated_tasks: List[models.RemediationTask] = []
 

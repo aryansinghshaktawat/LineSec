@@ -39,14 +39,16 @@ ALLOWED_FINDING_TRANSITIONS: Dict[FindingStatus, Set[FindingStatus]] = {
         FindingStatus.REMEDIATION_PENDING,
         FindingStatus.FALSE_POSITIVE,
         FindingStatus.RISK_ACCEPTED,
-        FindingStatus.TICKET_OPENED
+        FindingStatus.TICKET_OPENED,
+        FindingStatus.RESOLVED
     },
     FindingStatus.ANALYZED: {
         FindingStatus.REMEDIATION_PENDING,
         FindingStatus.IN_PROGRESS,
         FindingStatus.TICKET_OPENED,
         FindingStatus.RISK_ACCEPTED,
-        FindingStatus.FALSE_POSITIVE
+        FindingStatus.FALSE_POSITIVE,
+        FindingStatus.RESOLVED
     },
     FindingStatus.TICKET_OPENED: {
         FindingStatus.REMEDIATION_PENDING,
@@ -61,7 +63,8 @@ ALLOWED_FINDING_TRANSITIONS: Dict[FindingStatus, Set[FindingStatus]] = {
         FindingStatus.IN_PROGRESS,
         FindingStatus.TICKET_OPENED,
         FindingStatus.RISK_ACCEPTED,
-        FindingStatus.FALSE_POSITIVE
+        FindingStatus.FALSE_POSITIVE,
+        FindingStatus.RESOLVED
     },
     FindingStatus.IN_PROGRESS: {
         FindingStatus.VERIFICATION_PENDING,

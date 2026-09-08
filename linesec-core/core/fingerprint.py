@@ -37,3 +37,6 @@ def generate_finding_fingerprint(
     
     raw_key = ":".join(components)
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+generate_canonical_fingerprint = generate_finding_fingerprint
+

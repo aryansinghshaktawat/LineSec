@@ -20,6 +20,8 @@ from core.risk import RiskEngine
 from core.policy import PolicyEngine
 from core.safety import SafetyValidator, SafetyLevel
 from ai.service import AIAnalysisService
+from services.verification import VerificationEngine, SecurityDiffService
+from services.posture import PostureService
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -469,6 +471,96 @@ def get_posture_summary(repository_id: str = "default", db: Session = Depends(ge
         "regressions_count": regressed
     }
 
+# ==========================================
+# Phase 6: Verification & Security Diff Endpoints
+# ==========================================
+
+@app.post("/api/v1/verification/diff", response_model=schemas.SecurityDiffResponse)
+def compute_security_diff(
+    repository_id: str = Query("default"),
+    rescan_findings: List[schemas.FindingCreate] = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Compares active database findings for a repository against rescan findings.
+    Identifies RESOLVED, UNCHANGED, NEW, and REGRESSED findings with a verdict.
+    """
+    base_findings = db.query(models.Finding).filter(
+        models.Finding.repository_id == repository_id,
+        models.Finding.status != "RESOLVED"
+    ).all()
+    
+    diff = SecurityDiffService.compare_finding_sets(
+        base_findings=base_findings,
+        rescan_findings=rescan_findings,
+        db=db
+    )
+    return diff
+
+@app.post("/api/v1/tasks/{task_id}/verify", response_model=schemas.TaskVerificationResponse)
+def verify_task_remediation(
+    task_id: str,
+    req: Optional[schemas.TaskVerificationRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Verifies remediation of a task by evaluating rescan findings.
+    Automatically transitions task and finding lifecycles to RESOLVED or FAILED.
+    """
+    rescan_findings = req.rescan_findings if req else []
+    try:
+        result = VerificationEngine.verify_task(
+            db=db,
+            task_id=task_id,
+            rescan_findings=rescan_findings
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ==========================================
+# Phase 7: SLA & Risk Acceptance Endpoints
+# ==========================================
+
+@app.get("/api/v1/posture/sla", response_model=schemas.SLAReportResponse)
+def get_sla_posture_report(repository_id: str = "default", db: Session = Depends(get_db)):
+    """
+    Computes active SLA breaches, approaching breaches, MTTR, and priority breakdown.
+    """
+    return PostureService.get_sla_report(db=db, repository_id=repository_id)
+
+@app.post("/api/v1/risk-acceptance", response_model=schemas.RiskAcceptanceResponse)
+def create_risk_acceptance_waiver(
+    waiver_in: schemas.RiskAcceptanceCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Grants a formal risk acceptance waiver with an expiration deadline and rationale.
+    """
+    try:
+        waiver = PostureService.create_risk_acceptance(
+            db=db,
+            reason=waiver_in.reason,
+            owner=waiver_in.owner,
+            expires_at=waiver_in.expires_at,
+            finding_id=waiver_in.finding_id,
+            task_id=waiver_in.task_id
+        )
+        return waiver
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/v1/risk-acceptance", response_model=List[schemas.RiskAcceptanceResponse])
+def list_risk_acceptances(db: Session = Depends(get_db)):
+    """
+    Lists all risk acceptance records.
+    """
+    return db.query(models.RiskAcceptance).order_by(models.RiskAcceptance.created_at.desc()).all()
+
+
 @app.get("/api/v1/audit")
 def get_audit_events(limit: int = 50, db: Session = Depends(get_db)):
     return db.query(models.AuditEvent).order_by(models.AuditEvent.created_at.desc()).limit(limit).all()
+
+
